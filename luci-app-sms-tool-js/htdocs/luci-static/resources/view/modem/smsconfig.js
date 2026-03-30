@@ -1483,8 +1483,8 @@ return view.extend({
         o.cfgvalue = function(section_id) {
 	        return '';
         };
-        o.render = function(option_index, section_id, in_table) {
-	        return pkg._isPackageInstalled('mailsend').then(function(isInstalled) {
+	        o.render = function(option_index, section_id, in_table) {
+		        return pkg._isPackageInstalled('mailsend').then(function(isInstalled) {
 		        var content;
 		        
 		        if (isInstalled) {
@@ -1505,12 +1505,139 @@ return view.extend({
 			        E('label', { 'class': 'cbi-value-title' }, _('mailsend')),
 			        E('div', { 'class': 'cbi-value-field' }, content)
 		        ]);
-	        });
-        };
+		        });
+	        };
 
-		//TAB USSD
+		//TAB FORWARD SMS to TELEGRAM
 
-		s.tab('ussd', _('USSD Codes Settings'));
+		s.tab('telegram', _('SMS Forwarding to Telegram Settings'));
+		s.anonymous = true;
+
+		o = s.taboption('telegram', form.Flag, 'forward_sms_telegram_enabled',
+			_('Enable Telegram auto-forwarding'),
+			_('When enabled, new incoming SMS messages are automatically checked and forwarded to Telegram.')
+		);
+		o.rmempty = false;
+		o.write = function(section_id, value) {
+			return uci.load('sms_tool_js').then(function() {
+				let ptr = uci.get('sms_tool_js', '@sms_tool_js[0]', 'prestart') || '6';
+				let led = uci.get('sms_tool_js', '@sms_tool_js[0]', 'lednotify');
+
+				if (value == '1') {
+					uci.set('sms_tool_js', '@sms_tool_js[0]', 'forward_sms_telegram_enabled', '1');
+					return uci.save().then(function() {
+						return L.resolveDefault(fs.read('/etc/crontabs/root'), '');
+					}).then(function(crontab) {
+						let lines = (crontab || '').trim().replace(/\r\n/g, '\n').split('\n');
+						let filteredLines = lines.filter(function(line) {
+							return line.trim() !== '' && !line.includes('my_new_sms');
+						});
+						let cronEntry = '1 */' + ptr + ' * * * /etc/init.d/my_new_sms enable && /etc/init.d/my_new_sms restart';
+						filteredLines.push(cronEntry);
+						let newCrontab = filteredLines.join('\n') + '\n';
+						return fs.write('/etc/crontabs/root', newCrontab);
+					}).then(function() {
+						return fs.exec_direct('/etc/init.d/cron', ['restart']);
+					}).then(function() {
+						return fs.exec_direct('/etc/init.d/my_new_sms', ['enable']);
+					}).then(function() {
+						return fs.exec_direct('/etc/init.d/my_new_sms', ['start']);
+					});
+				}
+
+				if (value == '0') {
+					uci.set('sms_tool_js', '@sms_tool_js[0]', 'forward_sms_telegram_enabled', '0');
+					return uci.save().then(function() {
+						return L.resolveDefault(fs.read('/etc/crontabs/root'), '');
+					}).then(function(crontab) {
+						let lines = (crontab || '').trim().replace(/\r\n/g, '\n').split('\n');
+						let filteredLines = lines.filter(function(line) {
+							return line.trim() !== '' && !line.includes('my_new_sms');
+						});
+						let newCrontab = filteredLines.join('\n') + '\n';
+						return fs.write('/etc/crontabs/root', newCrontab);
+					}).then(function() {
+						return fs.exec_direct('/etc/init.d/cron', ['restart']);
+					}).then(function() {
+						if (led == '1')
+							return fs.exec_direct('/etc/init.d/my_new_sms', ['restart']);
+						return fs.exec_direct('/etc/init.d/my_new_sms', ['stop']).then(function() {
+							return fs.exec_direct('/etc/init.d/my_new_sms', ['disable']);
+						});
+					});
+				}
+			}).then(function() {
+				return form.Flag.prototype.write.apply(this, [section_id, value]);
+			}.bind(this));
+		};
+
+		o = s.taboption('telegram', form.Value, 'forward_sms_telegram_bot_token', _('Bot token'));
+		o.password = true;
+		o.modalonly = true;
+		o.description = _('Telegram bot token from @BotFather.');
+		o.depends('forward_sms_telegram_enabled', '1');
+
+		o = s.taboption('telegram', form.Value, 'forward_sms_telegram_chat_id', _('Chat ID'));
+		o.modalonly = true;
+		o.description = _('Target Telegram chat ID (for private chats, groups or channels).');
+		o.depends('forward_sms_telegram_enabled', '1');
+
+		o = s.taboption('telegram', form.ListValue, 'forward_sms_telegram_parse_mode', _('Parse mode'));
+		o.value('none', _('None'));
+		o.value('MarkdownV2', 'MarkdownV2');
+		o.value('HTML', 'HTML');
+		o.default = 'none';
+		o.modalonly = true;
+		o.depends('forward_sms_telegram_enabled', '1');
+
+		o = s.taboption('telegram', form.Value, 'forward_sms_telegram_timeout', _('HTTP timeout (seconds)'));
+		o.default = '15';
+		o.datatype = 'range(5, 60)';
+		o.modalonly = true;
+		o.depends('forward_sms_telegram_enabled', '1');
+
+		o = s.taboption('telegram', form.DummyValue, '_dummy_telegram');
+		o.rawhtml = true;
+		o.render = function() {
+			return E('div', {}, [
+				E('h3', {}, _('Required Package')),
+				E('div', { 'class': 'cbi-map-descr' }, _('Telegram forwarding requires curl and internet connectivity.'))
+			]);
+		};
+
+		o = s.taboption('telegram', form.DummyValue, '_curl_status', _('curl package'));
+		o.rawhtml = true;
+		o.cfgvalue = function(section_id) {
+			return '';
+		};
+		o.render = function(option_index, section_id, in_table) {
+			return pkg._isPackageInstalled('curl').then(function(isInstalled) {
+				var content;
+
+				if (isInstalled) {
+					content = E('span', {
+						'class': 'cbi-value-field',
+						'style': 'font-style: italic;'
+					}, _('Installed'));
+				} else {
+					content = E('button', {
+						'class': 'cbi-button cbi-button-action',
+						'click': function() {
+							pkg.openInstallerSearch('curl');
+						}
+					}, _('Install…'));
+				}
+
+				return E('div', { 'class': 'cbi-value' }, [
+					E('label', { 'class': 'cbi-value-title' }, _('curl')),
+					E('div', { 'class': 'cbi-value-field' }, content)
+				]);
+			});
+		};
+
+			//TAB USSD
+
+			s.tab('ussd', _('USSD Codes Settings'));
 		s.anonymous = true;
 
 		o = s.taboption('ussd', form.Value, 'ussdport', _('USSD sending port'), 

@@ -11,7 +11,8 @@ TM=$(($TX * 60))
 
 while [ 1 ]; do 
 	LED=$(uci -q get sms_tool_js.@sms_tool_js[0].lednotify)
-	if [ $LED == "1" ]; then
+	TG=$(uci -q get sms_tool_js.@sms_tool_js[0].forward_sms_telegram_enabled)
+	if [ "$LED" = "1" ] || [ "$TG" = "1" ]; then
     	sleep $TM
 		/sbin/smstool_led.sh >/dev/null 2>&1 &
 		continue

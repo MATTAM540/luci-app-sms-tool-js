@@ -13,3 +13,8 @@ config sms_tool_js
 	option information '1'
 	option ussdport ''
 	option atport ''
+	option forward_sms_telegram_enabled '0'
+	option forward_sms_telegram_bot_token ''
+	option forward_sms_telegram_chat_id ''
+	option forward_sms_telegram_parse_mode 'none'
+	option forward_sms_telegram_timeout '15'
