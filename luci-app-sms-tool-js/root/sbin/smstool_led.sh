@@ -69,6 +69,10 @@ handle_old_format() {
         echo timer > $LEDT
         echo $TMOFF > $LEDOFF
         echo $TMON > $LEDON
+        if [ "$(uci -q get sms_tool_js.@sms_tool_js[0].forward_sms_telegram_enabled)" = "1" ]; then
+            debug_log "Telegram forwarding enabled, triggering forward script"
+            /usr/bin/sms_forward_telegram.sh >/dev/null 2>&1 &
+        fi
         debug_log "LED activated successfully"
         return 1
     fi
@@ -158,6 +162,10 @@ handle_new_format() {
         echo timer > $LEDT
         echo $TMOFF > $LEDOFF
         echo $TMON > $LEDON
+        if [ "$(uci -q get sms_tool_js.@sms_tool_js[0].forward_sms_telegram_enabled)" = "1" ]; then
+            debug_log "Telegram forwarding enabled, triggering forward script"
+            /usr/bin/sms_forward_telegram.sh >/dev/null 2>&1 &
+        fi
         debug_log "LED activated successfully"
         return 1
     fi
